@@ -17,7 +17,7 @@ export default function MediaFiles() {
 
   async function fetchMidias() {
     setLoading(true);
-    const { data, error } = await supabase.from("media").select("*");
+    const { data, error } = await supabase.from("media_files").select("*");
     if (error) {
       alert("Erro ao buscar mídias");
       console.error(error);
@@ -28,7 +28,7 @@ export default function MediaFiles() {
   }
 
   async function deleteMidia(id: string) {
-    const { error } = await supabase.from("media").delete().eq("id", id);
+    const { error } = await supabase.from("media_files").delete().eq("id", id);
     if (error) {
       alert("Erro ao excluir");
       console.error(error);
