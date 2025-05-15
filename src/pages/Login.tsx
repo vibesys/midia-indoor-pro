@@ -47,7 +47,7 @@ const Login = () => {
       await signIn(values.email, values.password);
       navigate("/dashboard");
     } catch (error) {
-      console.error("Login failed:", error);
+      console.error("Login falhou:", error);
     } finally {
       setIsLoading(false);
     }
@@ -115,7 +115,7 @@ const Login = () => {
           </CardContent>
           <CardFooter className="flex justify-center text-sm text-muted-foreground">
             <div className="text-center">
-              <p>Após conectar o Supabase, você poderá fazer login com as credenciais configuradas.</p>
+              <p>Conectado ao Supabase. Use as credenciais configuradas no dashboard do Supabase.</p>
             </div>
           </CardFooter>
         </Card>

@@ -2,23 +2,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { useToast } from "@/components/ui/use-toast";
-
-// This is a placeholder - after Supabase integration, this will be replaced
-// with the actual Supabase client
-const supabaseClient = {
-  auth: {
-    getSession: async () => ({ data: { session: null }, error: null }),
-    onAuthStateChange: (callback: (event: string, session: Session | null) => void) => {
-      return { data: { subscription: { unsubscribe: () => {} } } };
-    },
-    signInWithPassword: async (credentials: { email: string, password: string }) => {
-      return { data: { user: null, session: null }, error: new Error('Supabase integration required') };
-    },
-    signOut: async () => {
-      return { error: null };
-    }
-  }
-};
+import { supabase } from "@/integrations/supabase/client";
 
 interface AuthContextType {
   user: User | null;
@@ -41,7 +25,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     const getInitialSession = async () => {
       try {
-        const { data, error } = await supabaseClient.auth.getSession();
+        const { data, error } = await supabase.auth.getSession();
         
         if (error) {
           throw error;
@@ -52,8 +36,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch (error) {
         console.error('Error getting initial auth session:', error);
         toast({
-          title: "Authentication Error",
-          description: "Failed to get authentication session",
+          title: "Erro de autenticação",
+          description: "Falha ao obter sessão de autenticação",
           variant: "destructive",
         });
       } finally {
@@ -63,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     getInitialSession();
 
-    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setSession(session);
         setUser(session?.user || null);
@@ -79,7 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const signIn = async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabaseClient.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
@@ -92,14 +76,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setSession(data.session);
       
       toast({
-        title: "Logged in successfully",
-        description: "Welcome back to Media Indoor Pro",
+        title: "Login realizado com sucesso",
+        description: "Bem-vindo de volta ao Midia Indoor Pro",
       });
     } catch (error: any) {
-      console.error('Error signing in:', error);
+      console.error('Erro ao fazer login:', error);
       toast({
-        title: "Login failed",
-        description: "Please verify your credentials",
+        title: "Falha no login",
+        description: "Verifique suas credenciais",
         variant: "destructive",
       });
       throw error;
@@ -111,7 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const signOut = async () => {
     try {
       setIsLoading(true);
-      const { error } = await supabaseClient.auth.signOut();
+      const { error } = await supabase.auth.signOut();
       
       if (error) {
         throw error;
@@ -121,14 +105,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setSession(null);
       
       toast({
-        title: "Logged out successfully",
-        description: "You have been logged out of Media Indoor Pro",
+        title: "Logout realizado com sucesso",
+        description: "Você saiu do Midia Indoor Pro",
       });
     } catch (error) {
-      console.error('Error signing out:', error);
+      console.error('Erro ao fazer logout:', error);
       toast({
-        title: "Logout failed",
-        description: "Failed to sign out. Please try again.",
+        title: "Falha no logout",
+        description: "Falha ao sair. Por favor, tente novamente.",
         variant: "destructive",
       });
     } finally {
@@ -146,7 +130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
   }
   return context;
 };
