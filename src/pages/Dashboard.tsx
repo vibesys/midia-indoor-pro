@@ -4,9 +4,11 @@ import { Monitor, ImageIcon, Link as LinkIcon, PlaySquare } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/components/ui/use-toast";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [dashboardStats, setDashboardStats] = useState({
     devices: {
@@ -27,6 +29,10 @@ const Dashboard = () => {
       active: 0
     }
   });
+
+  // Active devices and playlists (to be replaced with Supabase data)
+  const [activeDevices, setActiveDevices] = useState([]);
+  const [activePlaylists, setActivePlaylists] = useState([]);
 
   useEffect(() => {
     async function fetchDashboardData() {
@@ -56,21 +62,54 @@ const Dashboard = () => {
         // Fetch active device playlists
         const { data: devicePlaylistsData, error: devicePlaylistsError } = await supabase
           .from('device_playlists')
-          .select('*')
+          .select('*, devices(*), playlists(*)')
           .eq('is_active', true);
 
         if (devicesError || mediaError || linksError || playlistsError || devicePlaylistsError) {
           console.error("Error fetching dashboard data:", 
             devicesError || mediaError || linksError || playlistsError || devicePlaylistsError);
+          
+          toast({
+            title: "Erro ao carregar dados",
+            description: "Não foi possível carregar os dados do dashboard. Tente novamente mais tarde.",
+            variant: "destructive",
+          });
+          
           return;
         }
 
-        // Calculate statistics
-        const onlineDevices = devicesData?.filter(device => device.status === 'online') || [];
-        const offlineDevices = devicesData?.filter(device => device.status === 'offline') || [];
+        // Process devices data for display
+        const processedActiveDevices = (devicesData || [])
+          .slice(0, 5)
+          .map(device => ({
+            id: device.id,
+            name: device.name,
+            status: device.status,
+            playlist: devicePlaylistsData?.find(dp => dp.device_id === device.id)?.playlists?.name || null
+          }));
         
-        const imageFiles = mediaData?.filter(file => file.type === 'image') || [];
-        const videoFiles = mediaData?.filter(file => file.type === 'video') || [];
+        setActiveDevices(processedActiveDevices);
+
+        // Process playlists data for display
+        const processedActivePlaylists = (playlistsData || [])
+          .slice(0, 3)
+          .map(playlist => {
+            const deviceCount = devicePlaylistsData?.filter(dp => dp.playlist_id === playlist.id)?.length || 0;
+            return {
+              id: playlist.id,
+              name: playlist.name,
+              itemCount: 0 // Will be updated once we implement playlist items
+            };
+          });
+        
+        setActivePlaylists(processedActivePlaylists);
+
+        // Calculate statistics
+        const onlineDevices = (devicesData || []).filter(device => device.status === 'online') || [];
+        const offlineDevices = (devicesData || []).filter(device => device.status === 'offline') || [];
+        
+        const imageFiles = (mediaData || []).filter(file => file.type === 'image') || [];
+        const videoFiles = (mediaData || []).filter(file => file.type === 'video') || [];
 
         // Update dashboard stats
         setDashboardStats({
@@ -94,13 +133,18 @@ const Dashboard = () => {
         });
       } catch (error) {
         console.error("Error loading dashboard data:", error);
+        toast({
+          title: "Erro ao carregar dados",
+          description: "Não foi possível carregar os dados do dashboard. Tente novamente mais tarde.",
+          variant: "destructive",
+        });
       } finally {
         setLoading(false);
       }
     }
 
     fetchDashboardData();
-  }, []);
+  }, [toast]);
 
   // Cards for quick access
   const quickAccessCards = [
@@ -110,7 +154,8 @@ const Dashboard = () => {
       icon: Monitor,
       stats: `${dashboardStats.devices.online} online, ${dashboardStats.devices.offline} offline`,
       path: "/devices",
-      cardClass: "string-card"
+      cardClass: "string-card",
+      dataKey: "devices"
     },
     {
       title: "Mídia",
@@ -118,7 +163,8 @@ const Dashboard = () => {
       icon: ImageIcon,
       stats: `${dashboardStats.media.images} imagens, ${dashboardStats.media.videos} vídeos`,
       path: "/media",
-      cardClass: "var-card"
+      cardClass: "var-card",
+      dataKey: "media"
     },
     {
       title: "Links Externos",
@@ -126,7 +172,8 @@ const Dashboard = () => {
       icon: LinkIcon,
       stats: `${dashboardStats.links.total} links`,
       path: "/links",
-      cardClass: "function-card"
+      cardClass: "function-card",
+      dataKey: "links"
     },
     {
       title: "Playlists",
@@ -134,24 +181,9 @@ const Dashboard = () => {
       icon: PlaySquare,
       stats: `${dashboardStats.playlists.active} ativas de ${dashboardStats.playlists.total}`,
       path: "/playlists",
-      cardClass: "keyword-card"
+      cardClass: "keyword-card",
+      dataKey: "playlists"
     }
-  ];
-
-  // Simplified mock data for active devices (replace with actual data later)
-  const activeDevices = [
-    { id: 1, name: "TV Recepção 1", status: "online", playlist: "Homepage" },
-    { id: 2, name: "TV Recepção 2", status: "online", playlist: "Homepage" },
-    { id: 3, name: "TV Recepção 3", status: "online", playlist: "Homepage" },
-    { id: 4, name: "TV Sala 4", status: "offline", playlist: null },
-    { id: 5, name: "TV Sala 5", status: "offline", playlist: null }
-  ];
-
-  // Simplified mock data for playlists (replace with actual data later)
-  const activePlaylists = [
-    { id: 1, name: "Playlist 1", itemCount: 4 },
-    { id: 2, name: "Playlist 2", itemCount: 5 },
-    { id: 3, name: "Playlist 3", itemCount: 6 }
   ];
 
   if (loading) {
@@ -184,7 +216,9 @@ const Dashboard = () => {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">{card.description}</p>
-              <p className="text-2xl font-bold mt-2">{dashboardStats[card.title.toLowerCase() as keyof typeof dashboardStats]?.total || 0}</p>
+              <p className="text-2xl font-bold mt-2">
+                {dashboardStats[card.dataKey.toLowerCase()]?.total || 0}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">{card.stats}</p>
             </CardContent>
           </Card>
@@ -199,17 +233,23 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {activeDevices.map((device) => (
-                <div key={device.id} className="flex items-center justify-between p-2 border rounded-md">
-                  <div className="flex items-center gap-2">
-                    <div className={`h-2 w-2 rounded-full ${device.status === 'online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                    <span className="font-semibold">{device.name}</span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {device.status === 'online' ? `Playlist: ${device.playlist}` : 'Offline'}
-                  </div>
+              {activeDevices.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  Nenhum dispositivo cadastrado ainda
                 </div>
-              ))}
+              ) : (
+                activeDevices.map((device) => (
+                  <div key={device.id} className="flex items-center justify-between p-2 border rounded-md">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-2 w-2 rounded-full ${device.status === 'online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                      <span className="font-semibold">{device.name}</span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {device.status === 'online' ? `Playlist: ${device.playlist || 'Nenhuma'}` : 'Offline'}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </CardContent>
           <CardFooter>
@@ -229,15 +269,21 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {activePlaylists.map((playlist) => (
-                <div key={playlist.id} className="flex items-center justify-between p-2 border rounded-md">
-                  <div className="flex items-center gap-2">
-                    <PlaySquare className="h-4 w-4 text-accent" />
-                    <span className="font-semibold">{playlist.name}</span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">{playlist.itemCount} itens</div>
+              {activePlaylists.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  Nenhuma playlist cadastrada ainda
                 </div>
-              ))}
+              ) : (
+                activePlaylists.map((playlist) => (
+                  <div key={playlist.id} className="flex items-center justify-between p-2 border rounded-md">
+                    <div className="flex items-center gap-2">
+                      <PlaySquare className="h-4 w-4 text-accent" />
+                      <span className="font-semibold">{playlist.name}</span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">{playlist.itemCount} itens</div>
+                  </div>
+                ))
+              )}
             </div>
           </CardContent>
           <CardFooter>
