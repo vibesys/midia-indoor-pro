@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, PLAYLIST_ITEM_TYPES } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -644,10 +645,20 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
         nextOrderNum = Math.max(...playlistItems.map(item => item.order_num)) + 1;
       }
       
+      // Convert itemType to the format expected by the database
+      let dbItemType = itemType;
+      if (itemType === 'image') {
+        dbItemType = PLAYLIST_ITEM_TYPES.IMAGE;
+      } else if (itemType === 'video') {
+        dbItemType = PLAYLIST_ITEM_TYPES.VIDEO;
+      } else if (itemType === 'link') {
+        dbItemType = PLAYLIST_ITEM_TYPES.LINK;
+      }
+      
       console.log("Adding item to playlist:", {
         playlist_id: playlist.id,
         item_id: itemId,
-        item_type: itemType,
+        item_type: dbItemType,
         order_num: nextOrderNum
       });
       
@@ -656,7 +667,7 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
         .insert([{
           playlist_id: playlist.id,
           item_id: itemId,
-          item_type: itemType,
+          item_type: dbItemType,
           order_num: nextOrderNum
         }])
         .select();

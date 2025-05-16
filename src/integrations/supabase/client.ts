@@ -10,3 +10,10 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // import { supabase } from "@/integrations/supabase/client";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+// Define allowed item types for playlist items
+export const PLAYLIST_ITEM_TYPES = {
+  IMAGE: 'image_file',
+  VIDEO: 'video_file', 
+  LINK: 'link'
+};
