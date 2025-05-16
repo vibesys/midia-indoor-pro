@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -527,6 +526,7 @@ interface PlaylistDetailProps {
 }
 
 const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
+  const navigate = useNavigate();
   const [addItemDialog, setAddItemDialog] = useState(false);
   const [playlistItems, setPlaylistItems] = useState<{id: string; order_num: number; item_id: string; item_type: string; details: any}[]>([]);
   const [availableMedia, setAvailableMedia] = useState<MediaFileType[]>([]);
@@ -638,11 +638,18 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
 
   const addItemToPlaylist = async (itemId: string, itemType: string) => {
     try {
-      // Determinar o próximo número de ordem
+      // Determine the next order number
       let nextOrderNum = 1;
       if (playlistItems.length > 0) {
         nextOrderNum = Math.max(...playlistItems.map(item => item.order_num)) + 1;
       }
+      
+      console.log("Adding item to playlist:", {
+        playlist_id: playlist.id,
+        item_id: itemId,
+        item_type: itemType,
+        order_num: nextOrderNum
+      });
       
       const { data, error } = await supabase
         .from("playlist_items")
@@ -654,8 +661,12 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
         }])
         .select();
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error:", error);
+        throw error;
+      }
       
+      console.log("Item added successfully:", data);
       fetchPlaylistDetails();
       setAddItemDialog(false);
       
