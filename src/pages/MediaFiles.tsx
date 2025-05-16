@@ -6,11 +6,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { PlusCircle, Image, Film, Edit, Trash2, Play, Eye, Link } from "lucide-react";
+import { PlusCircle, Image, Film, Edit, Trash2, Play, Eye, Link, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { useToast } from "@/components/ui/use-toast";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 interface MediaFile extends Tables<"media_files"> {}
 
@@ -22,6 +23,8 @@ const MediaFiles = () => {
   const [fileName, setFileName] = useState("");
   const [fileUrl, setFileUrl] = useState("");
   const [fileType, setFileType] = useState("image");
+  const [errorDialog, setErrorDialog] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const { toast } = useToast();
 
   useEffect(() => {
@@ -54,23 +57,36 @@ const MediaFiles = () => {
   };
 
   const extractGoogleDriveId = (url: string): string | null => {
-    // Match pattern for Google Drive links
-    // https://drive.google.com/file/d/{fileId}/view
-    // https://drive.google.com/open?id={fileId}
+    // Vários formatos possíveis de URL do Google Drive
+    const patterns = [
+      // Formato padrão do arquivo
+      /\/file\/d\/([a-zA-Z0-9_-]+)/,
+      // Formato com ?id=
+      /[?&]id=([a-zA-Z0-9_-]+)/,
+      // Formato de link compartilhável
+      /\/open\?id=([a-zA-Z0-9_-]+)/,
+      // Formato de visualização
+      /\/view\?usp=sharing.*&id=([a-zA-Z0-9_-]+)/,
+      // Formato direto (apenas o ID)
+      /^([a-zA-Z0-9_-]{25,})$/
+    ];
     
-    const fileIdRegex1 = /\/file\/d\/([a-zA-Z0-9_-]+)/;
-    const fileIdRegex2 = /[?&]id=([a-zA-Z0-9_-]+)/;
-    
-    const match1 = url.match(fileIdRegex1);
-    if (match1 && match1[1]) {
-      return match1[1];
+    // Tenta cada padrão até encontrar um que funcione
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        console.log("ID do Google Drive extraído:", match[1]);
+        return match[1];
+      }
     }
     
-    const match2 = url.match(fileIdRegex2);
-    if (match2 && match2[1]) {
-      return match2[1];
+    // Verifica se é uma URL de pasta (que não pode ser usada diretamente)
+    if (url.match(/\/folders\/([a-zA-Z0-9_-]+)/)) {
+      console.error("URL de pasta do Google Drive detectada - não pode ser usada diretamente");
+      return null;
     }
     
+    console.error("Não foi possível extrair o ID do Google Drive:", url);
     return null;
   };
 
@@ -92,7 +108,7 @@ const MediaFiles = () => {
       return;
     }
 
-    if (!fileUrl.includes("drive.google.com")) {
+    if (!fileUrl.includes("drive.google.com") && !fileUrl.match(/^[a-zA-Z0-9_-]{25,}$/)) {
       toast({
         title: "Erro",
         description: "Por favor, forneça um link válido do Google Drive.",
@@ -104,11 +120,8 @@ const MediaFiles = () => {
     try {
       const fileId = extractGoogleDriveId(fileUrl);
       if (!fileId) {
-        toast({
-          title: "Erro",
-          description: "Não foi possível extrair o ID do arquivo do Google Drive.",
-          variant: "destructive"
-        });
+        setErrorMessage("Não foi possível extrair o ID do arquivo do Google Drive. Por favor, verifique se você está compartilhando o arquivo (não uma pasta) e tente novamente.");
+        setErrorDialog(true);
         return;
       }
 
@@ -237,7 +250,7 @@ const MediaFiles = () => {
                   onChange={(e) => setFileUrl(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Compartilhe o arquivo no Google Drive e cole o link aqui.
+                  Compartilhe o arquivo no Google Drive e cole o link aqui. Certifique-se de que o arquivo (não uma pasta) esteja compartilhado.
                 </p>
               </div>
               <div className="grid gap-2">
@@ -329,6 +342,26 @@ const MediaFiles = () => {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Diálogo de erro */}
+      <AlertDialog open={errorDialog} onOpenChange={setErrorDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              Erro
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {errorMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setErrorDialog(false)}>
+              Entendi
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
