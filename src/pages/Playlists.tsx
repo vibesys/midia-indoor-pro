@@ -534,10 +534,62 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [devices, setDevices] = useState<{id: string; name: string; status: string}[]>([]);
   const { toast } = useToast();
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [previewAutoplay, setPreviewAutoplay] = useState(false);
+  const [previewInterval, setPreviewInterval] = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchPlaylistDetails();
   }, [playlist.id]);
+
+  // Clean up interval on unmount
+  useEffect(() => {
+    return () => {
+      if (previewInterval) {
+        clearInterval(previewInterval);
+      }
+    };
+  }, [previewInterval]);
+
+  // Handle autoplay in preview mode
+  useEffect(() => {
+    if (showPreview && previewAutoplay && playlistItems.length > 0) {
+      const interval = setInterval(() => {
+        setPreviewIndex(prevIndex => {
+          const nextIndex = prevIndex + 1;
+          return nextIndex >= playlistItems.length ? 0 : nextIndex;
+        });
+      }, getCurrentItemDuration());
+
+      setPreviewInterval(interval);
+      
+      return () => clearInterval(interval);
+    } else if (previewInterval) {
+      clearInterval(previewInterval);
+      setPreviewInterval(null);
+    }
+  }, [showPreview, previewAutoplay, previewIndex, playlistItems]);
+
+  // Get duration for current preview item in milliseconds
+  const getCurrentItemDuration = () => {
+    if (!playlistItems.length || previewIndex >= playlistItems.length) return 10000; // Default 10s
+    
+    const currentItem = playlistItems[previewIndex];
+    
+    if (currentItem.item_type === 'image') {
+      return 10000; // 10 seconds for images
+    } else if (currentItem.item_type === 'link') {
+      const displayTime = currentItem.details.display_time || 15;
+      return displayTime * 1000; // Convert seconds to ms
+    } else if (currentItem.item_type === 'video') {
+      // For videos, we could parse the duration, but for now let's give a default
+      // In a real app, you'd want to listen to the video's ended event instead
+      return 30000; // 30 seconds for videos
+    }
+    
+    return 10000; // Default fallback
+  };
 
   const fetchPlaylistDetails = async () => {
     try {
@@ -821,6 +873,96 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
     }
   };
 
+  const startPreview = () => {
+    setPreviewIndex(0);
+    setShowPreview(true);
+  };
+
+  const stopPreview = () => {
+    setShowPreview(false);
+    setPreviewAutoplay(false);
+    if (previewInterval) {
+      clearInterval(previewInterval);
+      setPreviewInterval(null);
+    }
+  };
+
+  const nextPreviewItem = () => {
+    setPreviewIndex(prevIndex => {
+      const nextIndex = prevIndex + 1;
+      return nextIndex >= playlistItems.length ? 0 : nextIndex;
+    });
+  };
+
+  const prevPreviewItem = () => {
+    setPreviewIndex(prevIndex => {
+      const nextIndex = prevIndex - 1;
+      return nextIndex < 0 ? playlistItems.length - 1 : nextIndex;
+    });
+  };
+
+  const toggleAutoplay = () => {
+    setPreviewAutoplay(!previewAutoplay);
+  };
+
+  const PreviewContent = () => {
+    if (!playlistItems.length) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full">
+          <p className="text-lg text-muted-foreground">Nenhum item na playlist para visualizar</p>
+        </div>
+      );
+    }
+
+    const currentItem = playlistItems[previewIndex];
+    if (!currentItem) return null;
+
+    const itemDetails = currentItem.details;
+
+    if (currentItem.item_type === 'image') {
+      return (
+        <div className="flex flex-col items-center justify-center h-full">
+          <img 
+            src={itemDetails.url} 
+            alt={itemDetails.name} 
+            className="max-h-full max-w-full object-contain" 
+          />
+        </div>
+      );
+    } else if (currentItem.item_type === 'video') {
+      return (
+        <div className="flex flex-col items-center justify-center h-full">
+          <video 
+            src={itemDetails.url} 
+            controls 
+            autoPlay 
+            className="max-h-full max-w-full" 
+          >
+            Seu navegador não suporta o elemento de vídeo.
+          </video>
+        </div>
+      );
+    } else if (currentItem.item_type === 'link') {
+      return (
+        <div className="flex flex-col items-center justify-center h-full">
+          <div className="bg-card p-4 rounded-lg border shadow-sm max-w-full w-full">
+            <h3 className="text-xl font-bold mb-2">{itemDetails.title}</h3>
+            <a 
+              href={itemDetails.url} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:underline break-all"
+            >
+              {itemDetails.url}
+            </a>
+          </div>
+        </div>
+      );
+    }
+    
+    return null;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -837,9 +979,77 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
           </h3>
           <p className="text-muted-foreground">{playlist.description}</p>
         </div>
+        <div className="ml-auto">
+          <Button 
+            onClick={startPreview}
+            className="flex items-center gap-2"
+            variant="outline"
+            disabled={playlistItems.length === 0}
+          >
+            <Eye className="h-4 w-4" />
+            Prévia da Playlist
+          </Button>
+        </div>
       </div>
 
-      {isLoading ? (
+      {showPreview ? (
+        <Card className="w-full shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-lg">
+              Prévia da Playlist: {playlist.name}
+            </CardTitle>
+            <div className="flex gap-2">
+              <Button
+                onClick={toggleAutoplay}
+                variant={previewAutoplay ? "secondary" : "outline"}
+                size="sm"
+                className="flex items-center gap-1"
+              >
+                {previewAutoplay ? <Check className="h-4 w-4" /> : <PlaySquare className="h-4 w-4" />}
+                {previewAutoplay ? "Pausar" : "Reprodução Automática"}
+              </Button>
+              <Button onClick={stopPreview} variant="outline" size="sm">
+                <Eye className="h-4 w-4 mr-1" />
+                Fechar Prévia
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="relative bg-muted/20 rounded-md border aspect-video min-h-[400px] flex items-center justify-center">
+              <PreviewContent />
+            </div>
+            
+            <div className="flex justify-between items-center mt-4">
+              <div className="text-sm">
+                Item {previewIndex + 1} de {playlistItems.length}
+                {playlistItems[previewIndex] && (
+                  <span className="ml-2">
+                    ({playlistItems[previewIndex].details.name || playlistItems[previewIndex].details.title})
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={prevPreviewItem}
+                  variant="outline" 
+                  size="icon"
+                  className="h-8 w-8"
+                >
+                  <ArrowRight className="h-4 w-4 rotate-180" />
+                </Button>
+                <Button 
+                  onClick={nextPreviewItem}
+                  variant="outline" 
+                  size="icon"
+                  className="h-8 w-8"
+                >
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : isLoading ? (
         <div className="flex justify-center p-8">Carregando...</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
