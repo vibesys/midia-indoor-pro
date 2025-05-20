@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -678,7 +677,7 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
       }
       
       console.log("Item added successfully:", data);
-      fetchPlaylistDetails();
+      await fetchPlaylistDetails();
       setAddItemDialog(false);
       
       toast({
