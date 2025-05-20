@@ -645,13 +645,16 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
       }
       
       // Convert itemType to the format expected by the database
-      let dbItemType = itemType;
+      let dbItemType;
       if (itemType === 'image') {
         dbItemType = PLAYLIST_ITEM_TYPES.IMAGE;
       } else if (itemType === 'video') {
         dbItemType = PLAYLIST_ITEM_TYPES.VIDEO;
       } else if (itemType === 'link') {
         dbItemType = PLAYLIST_ITEM_TYPES.LINK;
+      } else {
+        // If the type is not recognized, use the type as is
+        dbItemType = itemType;
       }
       
       console.log("Adding item to playlist:", {

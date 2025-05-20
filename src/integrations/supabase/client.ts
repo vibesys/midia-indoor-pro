@@ -12,8 +12,9 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 // Define allowed item types for playlist items
+// These values must exactly match what's expected in the database constraints
 export const PLAYLIST_ITEM_TYPES = {
-  IMAGE: 'image_file',
-  VIDEO: 'video_file', 
+  IMAGE: 'image',
+  VIDEO: 'video', 
   LINK: 'link'
 };
