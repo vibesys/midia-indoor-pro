@@ -644,17 +644,16 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
         nextOrderNum = Math.max(...playlistItems.map(item => item.order_num)) + 1;
       }
       
-      // Convert itemType to the format expected by the database
+      // Convert itemType to one of the allowed values in the database constraint
       let dbItemType;
       if (itemType === 'image') {
-        dbItemType = PLAYLIST_ITEM_TYPES.IMAGE;
+        dbItemType = 'image'; // Using string literal to match exactly what's in the DB constraint
       } else if (itemType === 'video') {
-        dbItemType = PLAYLIST_ITEM_TYPES.VIDEO;
+        dbItemType = 'video'; // Using string literal to match exactly what's in the DB constraint
       } else if (itemType === 'link') {
-        dbItemType = PLAYLIST_ITEM_TYPES.LINK;
+        dbItemType = 'link'; // Using string literal to match exactly what's in the DB constraint
       } else {
-        // If the type is not recognized, use the type as is
-        dbItemType = itemType;
+        throw new Error(`Unsupported item type: ${itemType}`);
       }
       
       console.log("Adding item to playlist:", {
