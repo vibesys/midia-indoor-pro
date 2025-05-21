@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -557,16 +556,26 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
   // Handle autoplay in preview mode
   useEffect(() => {
     if (showPreview && previewAutoplay && playlistItems.length > 0) {
-      const interval = setInterval(() => {
-        setPreviewIndex(prevIndex => {
-          const nextIndex = prevIndex + 1;
-          return nextIndex >= playlistItems.length ? 0 : nextIndex;
-        });
-      }, getCurrentItemDuration());
-
-      setPreviewInterval(interval);
+      const currentItem = playlistItems[previewIndex];
       
-      return () => clearInterval(interval);
+      // Only set interval for non-video items
+      // For videos, we'll use the onEnded event
+      if (currentItem && currentItem.item_type !== 'video') {
+        const interval = setInterval(() => {
+          setPreviewIndex(prevIndex => {
+            const nextIndex = prevIndex + 1;
+            return nextIndex >= playlistItems.length ? 0 : nextIndex;
+          });
+        }, getCurrentItemDuration());
+
+        setPreviewInterval(interval);
+        
+        return () => clearInterval(interval);
+      } else if (previewInterval) {
+        // Clear any existing interval if we're showing a video
+        clearInterval(previewInterval);
+        setPreviewInterval(null);
+      }
     } else if (previewInterval) {
       clearInterval(previewInterval);
       setPreviewInterval(null);
@@ -585,9 +594,9 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
       const displayTime = currentItem.details.display_time || 15;
       return displayTime * 1000; // Convert seconds to ms
     } else if (currentItem.item_type === 'video') {
-      // For videos, we could parse the duration, but for now let's give a default
-      // In a real app, you'd want to listen to the video's ended event instead
-      return 30000; // 30 seconds for videos
+      // For videos, we now rely on the onEnded event rather than a timer
+      // But still provide a default for autoplay cases where the video might be missing
+      return 30000; // 30 seconds as fallback for videos
     }
     
     return 10000; // Default fallback
@@ -907,6 +916,7 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
     setPreviewAutoplay(!previewAutoplay);
   };
 
+  // Updated PreviewContent component to correctly display media
   const PreviewContent = () => {
     if (!playlistItems.length) {
       return (
@@ -924,40 +934,74 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
     if (currentItem.item_type === 'image') {
       return (
         <div className="flex flex-col items-center justify-center h-full">
-          <img 
-            src={itemDetails.url} 
-            alt={itemDetails.name} 
-            className="max-h-full max-w-full object-contain" 
-          />
+          {itemDetails.url ? (
+            <img 
+              src={itemDetails.url} 
+              alt={itemDetails.name || 'Imagem da playlist'} 
+              className="max-h-full max-w-full object-contain" 
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+              <ImageIcon size={48} />
+              <p>Imagem não disponível</p>
+            </div>
+          )}
         </div>
       );
     } else if (currentItem.item_type === 'video') {
       return (
         <div className="flex flex-col items-center justify-center h-full">
-          <video 
-            src={itemDetails.url} 
-            controls 
-            autoPlay 
-            className="max-h-full max-w-full" 
-          >
-            Seu navegador não suporta o elemento de vídeo.
-          </video>
+          {itemDetails.url ? (
+            <video 
+              src={itemDetails.url} 
+              controls 
+              autoPlay={previewAutoplay}
+              onEnded={previewAutoplay ? nextPreviewItem : undefined}
+              className="max-h-full max-w-full object-contain" 
+            >
+              Seu navegador não suporta o elemento de vídeo.
+            </video>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+              <Film size={48} />
+              <p>Vídeo não disponível</p>
+            </div>
+          )}
         </div>
       );
     } else if (currentItem.item_type === 'link') {
+      // For links we'll show a preview with either an iframe or a link card
       return (
         <div className="flex flex-col items-center justify-center h-full">
-          <div className="bg-card p-4 rounded-lg border shadow-sm max-w-full w-full">
-            <h3 className="text-xl font-bold mb-2">{itemDetails.title}</h3>
-            <a 
-              href={itemDetails.url} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-500 hover:underline break-all"
-            >
-              {itemDetails.url}
-            </a>
-          </div>
+          {itemDetails.url ? (
+            <div className="w-full h-full flex flex-col">
+              <div className="bg-card p-4 rounded-lg border shadow-sm mb-4">
+                <h3 className="text-xl font-bold mb-2">{itemDetails.title}</h3>
+                <a 
+                  href={itemDetails.url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-500 hover:underline break-all"
+                >
+                  {itemDetails.url}
+                </a>
+              </div>
+              <div className="flex-grow border rounded-lg overflow-hidden">
+                <iframe 
+                  src={itemDetails.url} 
+                  title={itemDetails.title || 'Link externo'}
+                  className="w-full h-full border-0"
+                  sandbox="allow-scripts allow-same-origin"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+              <Link size={48} />
+              <p>Link não disponível</p>
+            </div>
+          )}
         </div>
       );
     }
