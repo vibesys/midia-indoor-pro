@@ -930,20 +930,30 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
     if (!currentItem) return null;
 
     const itemDetails = currentItem.details;
+    console.log("Rendering preview for item:", currentItem);
+    console.log("Item details:", itemDetails);
 
     if (currentItem.item_type === 'image') {
       return (
         <div className="flex flex-col items-center justify-center h-full">
-          {itemDetails.url ? (
-            <img 
-              src={itemDetails.url} 
-              alt={itemDetails.name || 'Imagem da playlist'} 
-              className="max-h-full max-w-full object-contain" 
-            />
+          {itemDetails && itemDetails.url ? (
+            <>
+              <img 
+                src={itemDetails.url} 
+                alt={itemDetails.name || 'Imagem da playlist'} 
+                className="max-h-full max-w-full object-contain" 
+                onError={(e) => {
+                  console.error("Error loading image:", e);
+                  // If there's an error loading the image, we can set a fallback
+                  (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Imagem+não+disponível';
+                }}
+              />
+              <p className="text-sm mt-2 text-muted-foreground">{itemDetails.name}</p>
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
               <ImageIcon size={48} />
-              <p>Imagem não disponível</p>
+              <p>Imagem não disponível - URL: {itemDetails?.url}</p>
             </div>
           )}
         </div>
@@ -951,16 +961,22 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
     } else if (currentItem.item_type === 'video') {
       return (
         <div className="flex flex-col items-center justify-center h-full">
-          {itemDetails.url ? (
-            <video 
-              src={itemDetails.url} 
-              controls 
-              autoPlay={previewAutoplay}
-              onEnded={previewAutoplay ? nextPreviewItem : undefined}
-              className="max-h-full max-w-full object-contain" 
-            >
-              Seu navegador não suporta o elemento de vídeo.
-            </video>
+          {itemDetails && itemDetails.url ? (
+            <>
+              <video 
+                src={itemDetails.url} 
+                controls 
+                autoPlay={previewAutoplay}
+                onEnded={previewAutoplay ? nextPreviewItem : undefined}
+                className="max-h-full max-w-full object-contain" 
+                onError={(e) => {
+                  console.error("Error loading video:", e);
+                }}
+              >
+                Seu navegador não suporta o elemento de vídeo.
+              </video>
+              <p className="text-sm mt-2 text-muted-foreground">{itemDetails.name}</p>
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
               <Film size={48} />
@@ -973,7 +989,7 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
       // For links we'll show a preview with either an iframe or a link card
       return (
         <div className="flex flex-col items-center justify-center h-full">
-          {itemDetails.url ? (
+          {itemDetails && itemDetails.url ? (
             <div className="w-full h-full flex flex-col">
               <div className="bg-card p-4 rounded-lg border shadow-sm mb-4">
                 <h3 className="text-xl font-bold mb-2">{itemDetails.title}</h3>
