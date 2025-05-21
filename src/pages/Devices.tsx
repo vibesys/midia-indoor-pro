@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -73,10 +72,9 @@ const Devices = () => {
   const [linkPlaylistDialogOpen, setLinkPlaylistDialogOpen] = useState(false);
   const [deviceToLink, setDeviceToLink] = useState<Device | null>(null);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>("");
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>("none");
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
 
-  // Fetch devices from Supabase
   useEffect(() => {
     fetchDevices();
     fetchPlaylists();
@@ -175,14 +173,15 @@ const Devices = () => {
 
       // Add new device to the list
       if (data && data.length > 0) {
-        setDevices([...devices, {
+        const newDevice: Device = {
           id: data[0].id,
           name: data[0].name,
           code: data[0].code,
           status: 'offline',
           lastSeen: 'Nunca',
           playlist: 'Nenhuma'
-        }]);
+        };
+        setDevices([...devices, newDevice]);
       }
 
       // Reset form and close dialog
@@ -253,7 +252,7 @@ const Devices = () => {
   // Handle linking playlist to device
   const openLinkPlaylistDialog = (device: Device) => {
     setDeviceToLink(device);
-    setSelectedPlaylistId(device.playlistId || "");
+    setSelectedPlaylistId(device.playlistId || "none");
     setLinkPlaylistDialogOpen(true);
   };
   
@@ -267,8 +266,8 @@ const Devices = () => {
         .delete()
         .eq('device_id', deviceToLink.id);
       
-      // If a playlist was selected, create a new link
-      if (selectedPlaylistId) {
+      // If a playlist was selected (not "none"), create a new link
+      if (selectedPlaylistId && selectedPlaylistId !== "none") {
         const { error } = await supabase
           .from('device_playlists')
           .insert([
@@ -298,7 +297,7 @@ const Devices = () => {
       fetchDevices();
       setLinkPlaylistDialogOpen(false);
       setDeviceToLink(null);
-      setSelectedPlaylistId("");
+      setSelectedPlaylistId("none");
     } catch (error) {
       console.error("Error linking playlist:", error);
       toast({
@@ -331,6 +330,7 @@ const Devices = () => {
     );
   }
 
+  // Link Playlist Dialog
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -646,7 +646,7 @@ const Devices = () => {
                     <SelectValue placeholder="Selecione uma playlist" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nenhuma (remover vínculo)</SelectItem>
+                    <SelectItem value="none">Nenhuma (remover vínculo)</SelectItem>
                     {playlists.map(playlist => (
                       <SelectItem key={playlist.id} value={playlist.id}>
                         {playlist.name}
@@ -661,7 +661,7 @@ const Devices = () => {
             <Button variant="outline" onClick={() => {
               setLinkPlaylistDialogOpen(false);
               setDeviceToLink(null);
-              setSelectedPlaylistId("");
+              setSelectedPlaylistId("none");
             }}>
               Cancelar
             </Button>
