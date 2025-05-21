@@ -1,12 +1,12 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { PlusCircle, Image, Film, Edit, Trash2, Play, Eye, Link, AlertCircle } from "lucide-react";
+import { PlusCircle, Image, Film, Edit, Trash2, Play, Eye, Link, AlertCircle, HardDriveUpload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { useToast } from "@/components/ui/use-toast";
@@ -25,6 +25,9 @@ const MediaFiles = () => {
   const [fileType, setFileType] = useState("image");
   const [errorDialog, setErrorDialog] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [uploadOption, setUploadOption] = useState<"link" | "file">("link");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -98,7 +101,129 @@ const MediaFiles = () => {
     return fileType === "image" ? "jpg" : "mp4"; // Default extensions
   };
 
+  const getFileFormatFromFile = (file: File): string => {
+    return file.name.split('.').pop()?.toLowerCase() || (fileType === "image" ? "jpg" : "mp4");
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      const file = event.target.files[0];
+      setSelectedFile(file);
+      
+      // Auto-detect file type
+      if (file.type.startsWith('image/')) {
+        setFileType('image');
+      } else if (file.type.startsWith('video/')) {
+        setFileType('video');
+      }
+      
+      // Use file name as default media name if not set
+      if (!fileName) {
+        setFileName(file.name.split('.')[0]);
+      }
+    }
+  };
+
+  const handleUploadFile = async () => {
+    if (!selectedFile) {
+      toast({
+        title: "Erro",
+        description: "Por favor, selecione um arquivo para upload.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!fileName) {
+      setFileName(selectedFile.name.split('.')[0]);
+    }
+
+    try {
+      const fileFormat = getFileFormatFromFile(selectedFile);
+      const fileSize = `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`;
+      
+      // Create a temporary URL for the file
+      const objectUrl = URL.createObjectURL(selectedFile);
+      
+      // Additional data for images and videos
+      let additionalData = {};
+      if (fileType === "image") {
+        additionalData = { dimensions: "Carregando dimensões..." };
+      } else if (fileType === "video") {
+        additionalData = { duration: "Carregando duração..." };
+      }
+      
+      // Add the file to the database first
+      const { data, error } = await supabase
+        .from("media_files")
+        .insert([{
+          name: fileName,
+          type: fileType,
+          format: fileFormat,
+          size: fileSize,
+          url: objectUrl, // Temporary URL
+          ...additionalData
+        }])
+        .select();
+      
+      if (error) {
+        throw error;
+      }
+      
+      const newMedia = data[0];
+      
+      // Create a unique path for the file
+      const filePath = `${newMedia.id}.${fileFormat}`;
+      
+      // Upload the file to Supabase Storage
+      const fileExt = selectedFile.name.split('.').pop();
+      const { error: uploadError } = await supabase.storage
+        .from('media')
+        .upload(filePath, selectedFile);
+      
+      if (uploadError) {
+        // If upload fails, delete the database entry
+        await supabase.from("media_files").delete().eq("id", newMedia.id);
+        throw uploadError;
+      }
+      
+      // Get public URL for the uploaded file
+      const { data: fileUrlData } = supabase.storage
+        .from('media')
+        .getPublicUrl(filePath);
+      
+      // Update the media entry with the correct URL
+      await supabase
+        .from("media_files")
+        .update({ url: fileUrlData.publicUrl })
+        .eq("id", newMedia.id);
+      
+      setOpenDialog(false);
+      setFileName("");
+      setSelectedFile(null);
+      fetchMediaFiles();
+      
+      toast({
+        title: "Sucesso",
+        description: "Arquivo de mídia enviado com sucesso.",
+        variant: "default"
+      });
+    } catch (error) {
+      console.error("Erro ao fazer upload do arquivo:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível enviar o arquivo. Tente novamente.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const handleAddMedia = async () => {
+    if (uploadOption === "file") {
+      await handleUploadFile();
+      return;
+    }
+
     if (!fileName || !fileUrl) {
       toast({
         title: "Erro",
@@ -226,9 +351,9 @@ const MediaFiles = () => {
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>Adicionar Mídia do Google Drive</DialogTitle>
+              <DialogTitle>Adicionar Mídia</DialogTitle>
               <DialogDescription>
-                Cole um link do Google Drive para imagens ou vídeos que você deseja exibir.
+                Faça upload de arquivos ou adicione links do Google Drive.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -241,35 +366,79 @@ const MediaFiles = () => {
                   onChange={(e) => setFileName(e.target.value)}
                 />
               </div>
+              
               <div className="grid gap-2">
-                <Label htmlFor="url">Link do Google Drive</Label>
-                <Input 
-                  id="url" 
-                  placeholder="https://drive.google.com/file/d/..." 
-                  value={fileUrl}
-                  onChange={(e) => setFileUrl(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Compartilhe o arquivo no Google Drive e cole o link aqui. Certifique-se de que o arquivo (não uma pasta) esteja compartilhado.
-                </p>
+                <Label>Método de Upload</Label>
+                <div className="flex space-x-2">
+                  <Button 
+                    variant={uploadOption === "file" ? "default" : "outline"}
+                    className="flex-1"
+                    onClick={() => setUploadOption("file")}
+                    type="button"
+                  >
+                    <HardDriveUpload className="h-4 w-4 mr-2" /> Upload de Arquivo
+                  </Button>
+                  <Button 
+                    variant={uploadOption === "link" ? "default" : "outline"}
+                    className="flex-1"
+                    onClick={() => setUploadOption("link")}
+                    type="button"
+                  >
+                    <Link className="h-4 w-4 mr-2" /> Link do Google Drive
+                  </Button>
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label>Tipo de Arquivo</Label>
-                <RadioGroup defaultValue="image" value={fileType} onValueChange={setFileType}>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="image" id="image" />
-                    <Label htmlFor="image" className="flex items-center gap-1">
-                      <Image className="h-4 w-4" /> Imagem
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="video" id="video" />
-                    <Label htmlFor="video" className="flex items-center gap-1">
-                      <Film className="h-4 w-4" /> Vídeo
-                    </Label>
-                  </div>
-                </RadioGroup>
-              </div>
+              
+              {uploadOption === "file" ? (
+                <div className="grid gap-2">
+                  <Label htmlFor="file">Arquivo</Label>
+                  <Input
+                    id="file"
+                    type="file"
+                    ref={fileInputRef}
+                    accept="image/*,video/*"
+                    onChange={handleFileChange}
+                  />
+                  {selectedFile && (
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid gap-2">
+                  <Label htmlFor="url">Link do Google Drive</Label>
+                  <Input 
+                    id="url" 
+                    placeholder="https://drive.google.com/file/d/..." 
+                    value={fileUrl}
+                    onChange={(e) => setFileUrl(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Compartilhe o arquivo no Google Drive e cole o link aqui. Certifique-se de que o arquivo (não uma pasta) esteja compartilhado.
+                  </p>
+                </div>
+              )}
+              
+              {uploadOption === "link" && (
+                <div className="grid gap-2">
+                  <Label>Tipo de Arquivo</Label>
+                  <RadioGroup defaultValue="image" value={fileType} onValueChange={setFileType}>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="image" id="image" />
+                      <Label htmlFor="image" className="flex items-center gap-1">
+                        <Image className="h-4 w-4" /> Imagem
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="video" id="video" />
+                      <Label htmlFor="video" className="flex items-center gap-1">
+                        <Film className="h-4 w-4" /> Vídeo
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpenDialog(false)}>Cancelar</Button>
@@ -406,7 +575,9 @@ const MediaCard = ({ media, onDelete }: { media: MediaFile, onDelete: (id: strin
               </p>
               <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
                 <Link className="h-3 w-3" />
-                <span className="truncate">Google Drive</span>
+                <span className="truncate">
+                  {media.url?.includes('drive.google.com') ? 'Google Drive' : 'Upload Local'}
+                </span>
               </div>
             </div>
             <div className="flex gap-1">
@@ -458,7 +629,7 @@ const MediaCard = ({ media, onDelete }: { media: MediaFile, onDelete: (id: strin
                 window.open(media.url, '_blank');
               }}
             >
-              Ver no Google Drive
+              Ver Original
             </Button>
           </DialogFooter>
         </DialogContent>

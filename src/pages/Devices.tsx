@@ -18,59 +18,127 @@ import { Label } from "@/components/ui/label";
 import { PlusCircle, Edit, Trash2, ArrowUpRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
+
+interface Device {
+  id: string;
+  name: string;
+  code: string;
+  status: 'online' | 'offline';
+  lastSeen: string;
+  playlist: string;
+  playlistId?: string;
+}
+
+interface Playlist {
+  id: string;
+  name: string;
+  description: string | null;
+}
 
 const Devices = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [openDialog, setOpenDialog] = useState(false);
   const [search, setSearch] = useState("");
-  const [devices, setDevices] = useState([]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Form states
   const [newDeviceName, setNewDeviceName] = useState("");
   const [newDeviceCode, setNewDeviceCode] = useState("");
   const [newDeviceDescription, setNewDeviceDescription] = useState("");
+  
+  // Delete confirmation dialog
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deviceToDelete, setDeviceToDelete] = useState<Device | null>(null);
+  
+  // Playlist linking
+  const [linkPlaylistDialogOpen, setLinkPlaylistDialogOpen] = useState(false);
+  const [deviceToLink, setDeviceToLink] = useState<Device | null>(null);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>("");
+  const [loadingPlaylists, setLoadingPlaylists] = useState(false);
 
   // Fetch devices from Supabase
   useEffect(() => {
-    async function fetchDevices() {
-      try {
-        setLoading(true);
-        const { data, error } = await supabase
-          .from('devices')
-          .select('*, device_playlists(playlists(name))')
-          .order('name');
-
-        if (error) {
-          throw error;
-        }
-
-        // Format devices data for display
-        const formattedDevices = data.map(device => ({
-          id: device.id,
-          name: device.name,
-          code: device.code,
-          status: device.status || 'offline',
-          lastSeen: device.last_seen ? new Date(device.last_seen).toLocaleString() : 'Nunca',
-          playlist: device.device_playlists?.[0]?.playlists?.name || 'Nenhuma'
-        }));
-
-        setDevices(formattedDevices);
-      } catch (error) {
-        console.error("Error fetching devices:", error);
-        toast({
-          title: "Erro ao carregar dispositivos",
-          description: "Não foi possível carregar a lista de dispositivos.",
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchDevices();
-  }, [toast]);
+    fetchPlaylists();
+  }, []);
+
+  const fetchPlaylists = async () => {
+    try {
+      setLoadingPlaylists(true);
+      const { data, error } = await supabase
+        .from('playlists')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setPlaylists(data || []);
+    } catch (error) {
+      console.error("Error fetching playlists:", error);
+      toast({
+        title: "Erro ao carregar playlists",
+        description: "Não foi possível carregar a lista de playlists.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingPlaylists(false);
+    }
+  };
+
+  const fetchDevices = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('devices')
+        .select('*, device_playlists(playlist_id, playlists(id, name))')
+        .order('name');
+
+      if (error) {
+        throw error;
+      }
+
+      // Format devices data for display
+      const formattedDevices = data.map(device => ({
+        id: device.id,
+        name: device.name,
+        code: device.code,
+        status: device.status || 'offline',
+        lastSeen: device.last_seen ? new Date(device.last_seen).toLocaleString() : 'Nunca',
+        playlist: device.device_playlists?.[0]?.playlists?.name || 'Nenhuma',
+        playlistId: device.device_playlists?.[0]?.playlist_id || undefined
+      }));
+
+      setDevices(formattedDevices);
+    } catch (error) {
+      console.error("Error fetching devices:", error);
+      toast({
+        title: "Erro ao carregar dispositivos",
+        description: "Não foi possível carregar a lista de dispositivos.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Handle adding a new device
   const handleAddDevice = async () => {
@@ -127,6 +195,115 @@ const Devices = () => {
       toast({
         title: "Erro ao adicionar dispositivo",
         description: "Não foi possível cadastrar o dispositivo. Tente novamente.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle deleting a device
+  const confirmDeleteDevice = (device: Device) => {
+    setDeviceToDelete(device);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteDevice = async () => {
+    if (!deviceToDelete) return;
+    
+    try {
+      // First delete any related playlist links
+      const { error: linkError } = await supabase
+        .from('device_playlists')
+        .delete()
+        .eq('device_id', deviceToDelete.id);
+      
+      if (linkError) {
+        throw linkError;
+      }
+      
+      // Then delete the device itself
+      const { error } = await supabase
+        .from('devices')
+        .delete()
+        .eq('id', deviceToDelete.id);
+      
+      if (error) {
+        throw error;
+      }
+      
+      // Remove from local state
+      setDevices(devices.filter(d => d.id !== deviceToDelete.id));
+      
+      toast({
+        title: "Dispositivo excluído",
+        description: `${deviceToDelete.name} foi excluído com sucesso.`,
+      });
+      
+      setDeleteDialogOpen(false);
+      setDeviceToDelete(null);
+    } catch (error) {
+      console.error("Error deleting device:", error);
+      toast({
+        title: "Erro ao excluir dispositivo",
+        description: "Não foi possível excluir o dispositivo. Tente novamente.",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // Handle linking playlist to device
+  const openLinkPlaylistDialog = (device: Device) => {
+    setDeviceToLink(device);
+    setSelectedPlaylistId(device.playlistId || "");
+    setLinkPlaylistDialogOpen(true);
+  };
+  
+  const handleLinkPlaylist = async () => {
+    if (!deviceToLink) return;
+    
+    try {
+      // First, remove any existing playlist links
+      await supabase
+        .from('device_playlists')
+        .delete()
+        .eq('device_id', deviceToLink.id);
+      
+      // If a playlist was selected, create a new link
+      if (selectedPlaylistId) {
+        const { error } = await supabase
+          .from('device_playlists')
+          .insert([
+            {
+              device_id: deviceToLink.id,
+              playlist_id: selectedPlaylistId,
+              is_active: true
+            }
+          ]);
+        
+        if (error) {
+          throw error;
+        }
+        
+        toast({
+          title: "Playlist vinculada",
+          description: `Playlist vinculada ao dispositivo ${deviceToLink.name} com sucesso.`,
+        });
+      } else {
+        toast({
+          title: "Vínculo removido",
+          description: `O dispositivo ${deviceToLink.name} não está mais vinculado a nenhuma playlist.`,
+        });
+      }
+      
+      // Refresh the devices list
+      fetchDevices();
+      setLinkPlaylistDialogOpen(false);
+      setDeviceToLink(null);
+      setSelectedPlaylistId("");
+    } catch (error) {
+      console.error("Error linking playlist:", error);
+      toast({
+        title: "Erro ao vincular playlist",
+        description: "Não foi possível vincular a playlist ao dispositivo. Tente novamente.",
         variant: "destructive",
       });
     }
@@ -277,10 +454,18 @@ const Devices = () => {
                           >
                             <ArrowUpRight className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon">
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => openLinkPlaylistDialog(device)}
+                          >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon">
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => confirmDeleteDevice(device)}
+                          >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -333,10 +518,18 @@ const Devices = () => {
                             >
                               <ArrowUpRight className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => openLinkPlaylistDialog(device)}
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => confirmDeleteDevice(device)}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -389,10 +582,18 @@ const Devices = () => {
                             >
                               <ArrowUpRight className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => openLinkPlaylistDialog(device)}
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => confirmDeleteDevice(device)}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -405,6 +606,71 @@ const Devices = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmação de exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o dispositivo {deviceToDelete?.name}? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeviceToDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteDevice} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Link Playlist Dialog */}
+      <Dialog open={linkPlaylistDialogOpen} onOpenChange={setLinkPlaylistDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Vincular Playlist</DialogTitle>
+            <DialogDescription>
+              Selecione uma playlist para vincular ao dispositivo {deviceToLink?.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="playlist">Playlist</Label>
+                <Select
+                  value={selectedPlaylistId}
+                  onValueChange={setSelectedPlaylistId}
+                >
+                  <SelectTrigger className="w-full mt-2">
+                    <SelectValue placeholder="Selecione uma playlist" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Nenhuma (remover vínculo)</SelectItem>
+                    {playlists.map(playlist => (
+                      <SelectItem key={playlist.id} value={playlist.id}>
+                        {playlist.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setLinkPlaylistDialogOpen(false);
+              setDeviceToLink(null);
+              setSelectedPlaylistId("");
+            }}>
+              Cancelar
+            </Button>
+            <Button onClick={handleLinkPlaylist}>
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
