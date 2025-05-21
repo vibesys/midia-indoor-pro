@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,8 @@ import {
   LayoutList,
   ArrowRight,
   MoveUp,
-  MoveDown
+  MoveDown,
+  Eye,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { 
