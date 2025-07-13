@@ -21,6 +21,7 @@ import {
   MoveUp,
   MoveDown,
   Eye,
+  Save,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -125,7 +126,7 @@ const Playlists = () => {
         // Para cada item, buscar detalhes adicionais
         const itemsWithDetails = await Promise.all((playlistItems || []).map(async (item) => {
           let name = "";
-          let duration = "";
+          let duration = item.duration || "";
           
           if (item.item_type === "image" || item.item_type === "video") {
             // Buscar detalhes do arquivo de mídia
@@ -137,7 +138,9 @@ const Playlists = () => {
             
             if (!mediaError && media) {
               name = media.name;
-              duration = item.item_type === "video" ? media.duration || "0:30" : "10s";
+              if (!duration) {
+                duration = item.item_type === "video" ? media.duration || "30s" : "10s";
+              }
             }
           } else if (item.item_type === "link") {
             // Buscar detalhes do link externo
@@ -149,7 +152,9 @@ const Playlists = () => {
             
             if (!linkError && link) {
               name = link.title;
-              duration = `${link.display_time}s`;
+              if (!duration) {
+                duration = `${link.display_time}s`;
+              }
             }
           }
           
@@ -529,7 +534,7 @@ interface PlaylistDetailProps {
 const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
   const navigate = useNavigate();
   const [addItemDialog, setAddItemDialog] = useState(false);
-  const [playlistItems, setPlaylistItems] = useState<{id: string; order_num: number; item_id: string; item_type: string; details: any}[]>([]);
+  const [playlistItems, setPlaylistItems] = useState<{id: string; order_num: number; item_id: string; item_type: string; details: any; duration: string}[]>([]);
   const [availableMedia, setAvailableMedia] = useState<MediaFileType[]>([]);
   const [availableLinks, setAvailableLinks] = useState<ExternalLinkType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -539,6 +544,7 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [previewAutoplay, setPreviewAutoplay] = useState(false);
   const [previewInterval, setPreviewInterval] = useState<NodeJS.Timeout | null>(null);
+  const [editingDuration, setEditingDuration] = useState<{[key: string]: string}>({});
 
   useEffect(() => {
     fetchPlaylistDetails();
@@ -643,7 +649,7 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
           }
         }
         
-        return {...item, details};
+        return {...item, details, duration: item.duration || ""};
       }));
 
       setPlaylistItems(itemsWithDetails);
@@ -709,12 +715,17 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
       
       // Convert itemType to one of the allowed values in the database constraint
       let dbItemType;
+      let defaultDuration = "10s";
+      
       if (itemType === 'image') {
-        dbItemType = 'image'; // Using string literal to match exactly what's in the DB constraint
+        dbItemType = 'image';
+        defaultDuration = "10s";
       } else if (itemType === 'video') {
-        dbItemType = 'video'; // Using string literal to match exactly what's in the DB constraint
+        dbItemType = 'video';
+        defaultDuration = "30s";
       } else if (itemType === 'link') {
-        dbItemType = 'link'; // Using string literal to match exactly what's in the DB constraint
+        dbItemType = 'link';
+        defaultDuration = "15s";
       } else {
         throw new Error(`Unsupported item type: ${itemType}`);
       }
@@ -723,7 +734,8 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
         playlist_id: playlist.id,
         item_id: itemId,
         item_type: dbItemType,
-        order_num: nextOrderNum
+        order_num: nextOrderNum,
+        duration: defaultDuration
       });
       
       const { data, error } = await supabase
@@ -732,7 +744,8 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
           playlist_id: playlist.id,
           item_id: itemId,
           item_type: dbItemType,
-          order_num: nextOrderNum
+          order_num: nextOrderNum,
+          duration: defaultDuration
         }])
         .select();
       
@@ -882,6 +895,77 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
         variant: "destructive"
       });
     }
+  };
+
+  // Update duration in database
+  const updateItemDuration = async (itemId: string, newDuration: string) => {
+    try {
+      const { error } = await supabase
+        .from("playlist_items")
+        .update({ duration: newDuration })
+        .eq("id", itemId);
+      
+      if (error) throw error;
+      
+      // Update local state
+      setPlaylistItems(prevItems => 
+        prevItems.map(item => 
+          item.id === itemId ? { ...item, duration: newDuration } : item
+        )
+      );
+      
+      // Clear editing state
+      setEditingDuration(prev => {
+        const newState = { ...prev };
+        delete newState[itemId];
+        return newState;
+      });
+      
+      toast({
+        title: "Sucesso",
+        description: "Duração atualizada com sucesso.",
+        variant: "default"
+      });
+    } catch (error) {
+      console.error("Erro ao atualizar duração:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível atualizar a duração.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Handle duration edit
+  const handleDurationEdit = (itemId: string, currentDuration: string) => {
+    setEditingDuration(prev => ({
+      ...prev,
+      [itemId]: currentDuration
+    }));
+  };
+
+  // Save duration edit
+  const saveDurationEdit = (itemId: string) => {
+    const newDuration = editingDuration[itemId];
+    if (newDuration && newDuration.trim()) {
+      updateItemDuration(itemId, newDuration.trim());
+    } else {
+      // Clear editing state if no duration provided
+      setEditingDuration(prev => {
+        const newState = { ...prev };
+        delete newState[itemId];
+        return newState;
+      });
+    }
+  };
+
+  // Cancel duration edit
+  const cancelDurationEdit = (itemId: string) => {
+    setEditingDuration(prev => {
+      const newState = { ...prev };
+      delete newState[itemId];
+      return newState;
+    });
   };
 
   const startPreview = () => {
@@ -1219,15 +1303,8 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
                     playlistItems.map((item, index) => {
                       const details = item.details;
                       const itemName = details.name || details.title || "Item sem nome";
-                      let itemDuration = "";
-                      
-                      if (item.item_type === "image") {
-                        itemDuration = "10s"; // Tempo padrão para imagens
-                      } else if (item.item_type === "video") {
-                        itemDuration = details.duration || "30s";
-                      } else if (item.item_type === "link") {
-                        itemDuration = `${details.display_time || 15}s`;
-                      }
+                      const itemDuration = item.duration || "";
+                      const isEditingThisDuration = editingDuration.hasOwnProperty(item.id);
                       
                       return (
                         <div 
@@ -1244,9 +1321,52 @@ const PlaylistDetail = ({ playlist, onBack }: PlaylistDetailProps) => {
                               {item.item_type === 'link' && <Link className="h-4 w-4 text-code-function" />}
                               <div>
                                 <p className="font-medium">{itemName}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Duração: {itemDuration}
-                                </p>
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <span>Duração:</span>
+                                  {isEditingThisDuration ? (
+                                    <div className="flex items-center gap-1">
+                                      <Input
+                                        value={editingDuration[item.id]}
+                                        onChange={(e) => setEditingDuration(prev => ({
+                                          ...prev,
+                                          [item.id]: e.target.value
+                                        }))}
+                                        placeholder="Ex: 10s, 2m, 1m30s"
+                                        className="h-6 w-20 text-xs"
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            saveDurationEdit(item.id);
+                                          } else if (e.key === 'Escape') {
+                                            cancelDurationEdit(item.id);
+                                          }
+                                        }}
+                                      />
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6"
+                                        onClick={() => saveDurationEdit(item.id)}
+                                      >
+                                        <Save className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6"
+                                        onClick={() => cancelDurationEdit(item.id)}
+                                      >
+                                        ×
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleDurationEdit(item.id, itemDuration)}
+                                      className="hover:underline cursor-pointer"
+                                    >
+                                      {itemDuration || "Clique para definir"}
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
